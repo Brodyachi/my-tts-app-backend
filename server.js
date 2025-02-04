@@ -25,7 +25,7 @@ app.use(session({
 }));
 
 const apiToken = process.env.YANDEX_API_KEY;
-
+const folderToken = process.env.FOLDER_ID;
 async function synthesizeText(text) {
   const params = new URLSearchParams();
   params.append('text', text);
@@ -39,7 +39,7 @@ async function synthesizeText(text) {
       method: 'POST', 
       url: 'https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize',
       headers: {
-          Authorization: "Api-Key " + apiToken,
+          Authorization: "Api-Key " + apiToken
       },
       data: params,
       responseType: 'stream', 
