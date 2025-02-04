@@ -7,6 +7,7 @@ const { v2: cloudinaryV2 } = cloudinary;
 
 dotenv.config({ path: './secret.env' });
 
+const PORT = 5001;
 const app = express();
 const codes = new Map(); 
 app.use(bodyParser.json());
@@ -71,8 +72,8 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-app.listen(5000, () => {
-  console.log('Сервер работает на http://localhost:5000');
+app.listen(PORT, () => {
+  console.log('Сервер работает');
 });
 
 app.get('/', (req, res) => {
