@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Подтверждение регистрации</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f7fc;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background-color: #4CAF50;
+            padding: 20px;
+            text-align: center;
+            color: white;
+        }
+        .header img {
+            width: 50px;
+            vertical-align: middle;
+        }
+        .content {
+            padding: 20px;
+            text-align: center;
+        }
+        .content h2 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        .content p {
+            color: #555;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        .content .code {
+            background-color: #f1f1f1;
+            padding: 15px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .footer {
+            background-color: #f9f9f9;
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Добро пожаловать в RASA</h1>
+        </div>
+        <div class="content">
+            <h2>Подтверждение вашей регистрации</h2>
+            <p>Здравствуйте, ${email}!</p>
+            <p>Для завершения регистрации и получения доступа к нашему TTS web-приложению, пожалуйста, используйте следующий код подтверждения:</p>
+            <div class="code">${code}</div>
+            <p>Этот код действителен в течение 10 минут. Пожалуйста, используйте его вовремя, чтобы завершить процесс регистрации.</p>
+            <p>Если вы не регистрировались на сайте RASA, просто проигнорируйте это письмо.</p> 
+        </div>
+        <div class="footer">
+            <p>С уважением, Команда RASA</p>
+            <p>Если у вас есть вопросы, не стесняйтесь обращаться в нашу службу поддержки.</p>
+        </div>
+    </div>
+</body>
+</html>
