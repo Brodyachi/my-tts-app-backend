@@ -186,3 +186,20 @@ app.post('/api-request', async (req, res) => {
     res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
 })
+
+app.get('/session-info', (req, res) => {
+  if (req.session.user) {
+      const remainingTime = req.session.cookie.expires
+          ? new Date(req.session.cookie.expires) - Date.now()
+          : req.session.cookie.maxAge;
+
+      console.log(`Сессия пользователя: ${JSON.stringify(req.session.user, null, 2)}`);
+      console.log(`Оставшееся время сессии: ${Math.round(remainingTime / 1000)} сек`);
+
+      return res.json({ 
+          user: req.session.user, 
+          remainingTime: Math.round(remainingTime / 1000) 
+      });
+  }
+  res.status(401).json({ message: 'Нет активной сессии' });
+});
