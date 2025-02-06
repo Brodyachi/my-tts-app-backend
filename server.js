@@ -11,7 +11,9 @@ const PORT = 5001;
 const app = express();
 const codes = new Map(); 
 app.use(bodyParser.json());
-app.use(cors());
+app.use(cors({
+  credentials: true,
+}));
 
 app.use(session({
   secret: process.env.SESSION_SECRET,
@@ -20,9 +22,30 @@ app.use(session({
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: 'lax',
   }
 }));
+
+app.use((req, res, next) => {
+  if (req.session.user) {
+    const now = Date.now();
+    if (now - req.session.lastActivity > 30 * 60 * 1000) {
+      console.log(`Сессия для пользователя с ID: ${req.session.user} завершена из-за бездействия`);
+      req.session.destroy();
+    } else {
+      req.session.lastActivity = now;
+    }
+  }
+  next();
+});
+
+app.use((req, res, next) => {
+  if (req.session.user) {
+    console.log(`Активность сессии для пользователя с ID: ${req.session.user} на ${new Date()}`);
+  }
+  next();
+});
 
 const apiToken = process.env.YANDEX_API_KEY;
 const folderToken = process.env.FOLDER_ID;
@@ -95,7 +118,7 @@ app.post('/send-code', (req, res) => {
   const code = Math.floor(100000 + Math.random() * 900000);
   codes.set(email, { code, expires: Date.now() + 10 * 60 * 1000 });
   let htmlTemplate = fs.readFileSync(templatePath, 'utf-8');
-  htmlTemplate = htmlTemplate.replace('{{email}}', email).replace('{{code}}', code);
+  htmlTemplate = htmlTemplate.replace('${email}', email).replace('${code}', code);
   const mailOptions = {
     from: '"Joe Peach 🍑"<rasamailapllication@gmail.com>',
     to: email,
@@ -164,6 +187,7 @@ app.post('/log-in', async (req, res) => {
       const isMatch = await bcrypt.compare(password, userCheckResult.rows[0].password);
       if (isMatch) {
         req.session.user = userCheckResult.rows[0].id;
+        console.log('Сессия сохранена:', req.session);
         return res.status(200).json({ message: 'Успешный вход' });
       } else {
         return res.status(401).json({ message: 'Неправильный логин или пароль. Попробуйте еще раз.' });
@@ -187,19 +211,40 @@ app.post('/api-request', async (req, res) => {
   }
 })
 
-app.get('/session-info', (req, res) => {
+app.post('/log-out', (req, res) => {
   if (req.session.user) {
-      const remainingTime = req.session.cookie.expires
-          ? new Date(req.session.cookie.expires) - Date.now()
-          : req.session.cookie.maxAge;
-
-      console.log(`Сессия пользователя: ${JSON.stringify(req.session.user, null, 2)}`);
-      console.log(`Оставшееся время сессии: ${Math.round(remainingTime / 1000)} сек`);
-
-      return res.json({ 
-          user: req.session.user, 
-          remainingTime: Math.round(remainingTime / 1000) 
-      });
+    console.log(`Сессия завершена для пользователя с ID: ${req.session.user}`);
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: 'Ошибка при завершении сессии' });
+      }
+      res.status(200).json({ message: 'Выход выполнен успешно' });
+    });
+  } else {
+    res.status(400).json({ message: 'Пользователь не авторизован' });
   }
-  res.status(401).json({ message: 'Нет активной сессии' });
+});
+
+// app.get('/session-info', (req, res) => {
+//   if (req.session.user) {
+//       const remainingTime = req.session.cookie.expires
+//           ? new Date(req.session.cookie.expires) - Date.now()
+//           : req.session.cookie.maxAge;
+
+//       console.log(`Сессия пользователя: ${JSON.stringify(req.session.user, null, 2)}`);
+//       console.log(`Оставшееся время сессии: ${Math.round(remainingTime / 1000)} сек`);
+
+//       return res.json({ 
+//           user: req.session.user, 
+//           remainingTime: Math.round(remainingTime / 1000) 
+//       });
+//   }
+//   res.status(401).json({ message: 'Нет активной сессии' });
+// });
+
+app.get('/profile', (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ message: 'Пользователь не авторизован' });
+  }
+  res.status(200).json({ message: 'Профиль', userId: req.session.user });
 });
