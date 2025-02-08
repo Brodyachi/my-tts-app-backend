@@ -2,7 +2,7 @@ import {express,nodemailer,bodyParser,cors,bcrypt,pg,path,WebSocketServer,textTo
 } from './dependencies.js';
 
 import dotenv from 'dotenv';
-
+import google from 'googleapis'
 const { v2: cloudinaryV2 } = cloudinary;
 
 dotenv.config({ path: './secret.env' });
@@ -14,6 +14,42 @@ app.use(bodyParser.json());
 app.use(cors({
   credentials: true,
 }));
+
+const KEY_FILE_PATH = 'tts-web-application-bcac4ca38d7c.json';
+const SCOPES = ["https://www.googleapis.com/auth/drive"];
+
+async function uploadToGoogleDrive(audioStream) {
+  const auth = new google.Auth.GoogleAuth({
+    keyFile: KEY_FILE_PATH,
+    scopes: SCOPES,
+  });
+  
+  const drive = google.drive({ version: 'v3', auth });
+
+  const fileMetadata = {
+    name: `speech_${Date.now()}.ogg`,
+  };
+
+  const bufferStream = new stream.PassThrough();
+  audioStream.pipe(bufferStream);
+
+  const media = {
+    mimeType: 'audio/ogg',
+    body: bufferStream,
+  };
+
+  try {
+    const response = await drive.files.create({
+      resource: fileMetadata,
+      media: media,
+      fields: 'id',
+    });
+
+    console.log('Файл загружен на Google Drive. ID:', response.data.id);
+  } catch (error) {
+    console.error('Ошибка загрузки на Google Drive:', error.message);
+  }
+}
 
 app.use(session({
   secret: process.env.SESSION_SECRET,
@@ -67,7 +103,7 @@ async function synthesizeText(text) {
       data: params,
       responseType: 'stream', 
   })
-    response.data.pipe(fs.createWriteStream('./newFile2.ogg'))
+    await uploadToGoogleDrive(response.data);
     console.log('Аудиофайл сохранен');
   } catch (error) {
     console.error('Ошибка при синтезе речи:', error.response?.data || error.message);
@@ -201,10 +237,11 @@ app.post('/log-in', async (req, res) => {
 
 app.post('/api-request', async (req, res) => {
   const { text } = req.body;
+  const botReply = `Вы сказали: ${text}`;
   console.log(text);
   try {
     synthesizeText(text);
-    return res.status(200).json({ message: 'Обработано' });
+    return res.status(200).json({ message: 'Обработано', reply: botReply });
   } catch (error) {
     console.error('Ошибка запроса:', error);
     res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
