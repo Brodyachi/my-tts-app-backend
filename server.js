@@ -3,7 +3,6 @@ import {express,nodemailer,bodyParser,cors,bcrypt,pg,path,WebSocketServer,textTo
 
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
-const { v2: cloudinaryV2 } = cloudinary;
 
 dotenv.config({ path: './secret.env' });
 
@@ -11,20 +10,18 @@ const PORT = 5001;
 const app = express();
 const codes = new Map(); 
 app.use(bodyParser.json());
-
+app.use(cookieParser());
 app.use(session({
   secret: process.env.SESSION_SECRET,
-  resave: true,
-  saveUninitialized: true,
+  resave: false,
+  saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: false,
-    // secure: process.env.NODE_ENV === 'production',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 дней
     sameSite: 'lax',
   }
 }));
-
 
 app.use(cors({
   origin: 'http://localhost:5173',
@@ -37,24 +34,26 @@ app.get('/read-cookie', (req, res) => {
   res.send(req.cookies);
 });
 
-app.use(cookieParser());
+
 
 app.use((req, res, next) => {
   if (req.session.user) {
     const now = Date.now();
-    if (now - req.session.lastActivity > 30 * 60 * 1000) {
-      console.log(`Сессия для пользователя с ID: ${req.session.user} завершена из-за бездействия`);
-      req.session.destroy();
-    } else {
-      req.session.lastActivity = now;
+    if (now - (req.session.lastActivity || now) > 30 * 60 * 1000) {
+      console.log(`Сессия завершена из-за бездействия: ${req.session.user}`);
+      req.session.destroy(err => {
+        if (err) console.error('Ошибка при удалении сессии:', err);
+      });
+      return res.status(401).json({ message: 'Сессия истекла, войдите снова' });
     }
+    req.session.lastActivity = now;
   }
   next();
 });
 
 app.use((req, res, next) => {
   if (req.session.user) {
-    console.log(`Активность сессии для пользователя с ID: `+req.session+` на ${new Date()}`);
+    console.log(`Активность пользователя ${req.session.user} на ${new Date().toISOString()}`);
   }
   next();
 });
@@ -69,20 +68,37 @@ async function synthesizeText(session_user, text) {
   params.append('lang', 'ru-RU');
   params.append('speed', '0.7');
   params.append('format', 'oggopus');
+
   try {
     const response = await axios({
-      method: 'POST', 
+      method: 'POST',
       url: 'https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize',
       headers: {
-          Authorization: "Api-Key " + apiToken
+        Authorization: "Api-Key " + apiToken,
       },
       data: params,
-      responseType: 'stream', 
-  })
-    response.data.pipe(fs.createWriteStream(`./requests/${Date.now()}_${session_user}.ogg`));
-    console.log('Аудиофайл сохранен');
+      responseType: 'stream',
+    });
+
+    const filename = `${Date.now()}_${session_user}.ogg`;
+    const request_string = path.join(__dirname, 'public/requests', filename);
+    const writeStream = fs.createWriteStream(request_string);
+
+    response.data.pipe(writeStream);
+
+    await new Promise((resolve, reject) => {
+      writeStream.on('finish', resolve);
+      writeStream.on('error', reject);
+    });
+
+    const insertQuery = 'INSERT INTO requests (fk_user_id, audio_pos) VALUES ($1, $2)';
+    await client.query(insertQuery, [session_user, `http://localhost:5001/public/requests/${filename}`]);
+
+    console.log('Аудиофайл сохранен:', request_string);
+    return request_string;
   } catch (error) {
     console.error('Ошибка при синтезе речи:', error.response?.data || error.message);
+    throw new Error('Ошибка при синтезе речи');
   }
 }
 
@@ -205,7 +221,6 @@ app.post('/log-in', async (req, res) => {
     }
 
     req.session.user = userCheckResult.rows[0].id;
-    req.session.save();
     console.log('Сессия сохранена:', req.session);
 
     return res.status(200).json({ message: 'Успешный вход' });
@@ -220,16 +235,25 @@ app.post('/api-request', async (req, res) => {
   const { text } = req.body;
   const botReply = `Вы сказали: ${text}`;
   const session_user = req.session.user;
-  console.log(req.session);
-  console.log(text);
   try {
-    synthesizeText(session_user, text);
-    return res.status(200).json({ message: 'Обработано', reply: botReply });
+    if (!req.session.user) {
+      return res.status(401).json({ message: "Сессия не найдена" });
+    }
+    synthesizeText(req.session.user, text);
+    const userCheckQuery = 'SELECT audio_pos FROM requests WHERE fk_user_id = $1';
+    const userCheckResult = await client.query(userCheckQuery, [session_user]);
+    if (userCheckResult.rows.length > 0) {
+      const audioUrl = userCheckResult.rows[0].audio_pos;
+      return res.status(200).json({ request_url: audioUrl });
+    } else {
+      return res.status(404).json({ message: "Audio file not found" });
+    }
   } catch (error) {
     console.error('Ошибка запроса:', error);
     res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
-})
+});
+
 
 app.post('/log-out', (req, res) => {
   if (req.session.user) {
@@ -245,22 +269,23 @@ app.post('/log-out', (req, res) => {
   }
 });
 
-// app.get('/session-info', (req, res) => {
-//   if (req.session.user) {
-//       const remainingTime = req.session.cookie.expires
-//           ? new Date(req.session.cookie.expires) - Date.now()
-//           : req.session.cookie.maxAge;
+app.get('/session-info', (req, res) => {
+  if (req.session.user) {
+      const remainingTime = req.session.cookie.expires
+          ? new Date(req.session.cookie.expires) - Date.now()
+          : req.session.cookie.maxAge;
 
-//       console.log(`Сессия пользователя: ${JSON.stringify(req.session.user, null, 2)}`);
-//       console.log(`Оставшееся время сессии: ${Math.round(remainingTime / 1000)} сек`);
+      console.log(`Сессия пользователя: ${JSON.stringify(req.session.user, null, 2)}`);
+      console.log(`Оставшееся время сессии: ${Math.round(remainingTime / 1000)} сек`);
 
-//       return res.json({ 
-//           user: req.session.user, 
-//           remainingTime: Math.round(remainingTime / 1000) 
-//       });
-//   }
-//   res.status(401).json({ message: 'Нет активной сессии' });
-// });
+      return res.json({ 
+          user: req.session.user, 
+          remainingTime: Math.round(remainingTime / 1000) 
+      });
+  }
+  res.status(401).json({ message: 'Нет активной сессии' });
+});
+
 
 app.get('/profile', (req, res) => {
   if (!req.session.user) {
