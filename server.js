@@ -2,7 +2,7 @@ import {express,nodemailer,bodyParser,cors,bcrypt,pg,path,WebSocketServer,textTo
 } from './dependencies.js';
 
 import dotenv from 'dotenv';
-import google from 'googleapis'
+import cookieParser from 'cookie-parser';
 const { v2: cloudinaryV2 } = cloudinary;
 
 dotenv.config({ path: './secret.env' });
@@ -11,57 +11,33 @@ const PORT = 5001;
 const app = express();
 const codes = new Map(); 
 app.use(bodyParser.json());
-app.use(cors({
-  credentials: true,
-}));
-
-const KEY_FILE_PATH = 'tts-web-application-bcac4ca38d7c.json';
-const SCOPES = ["https://www.googleapis.com/auth/drive"];
-
-async function uploadToGoogleDrive(audioStream) {
-  const auth = new google.Auth.GoogleAuth({
-    keyFile: KEY_FILE_PATH,
-    scopes: SCOPES,
-  });
-  
-  const drive = google.drive({ version: 'v3', auth });
-
-  const fileMetadata = {
-    name: `speech_${Date.now()}.ogg`,
-  };
-
-  const bufferStream = new stream.PassThrough();
-  audioStream.pipe(bufferStream);
-
-  const media = {
-    mimeType: 'audio/ogg',
-    body: bufferStream,
-  };
-
-  try {
-    const response = await drive.files.create({
-      resource: fileMetadata,
-      media: media,
-      fields: 'id',
-    });
-
-    console.log('Файл загружен на Google Drive. ID:', response.data.id);
-  } catch (error) {
-    console.error('Ошибка загрузки на Google Drive:', error.message);
-  }
-}
 
 app.use(session({
   secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
+  resave: true,
+  saveUninitialized: true,
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false,
+    // secure: process.env.NODE_ENV === 'production',
     maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: 'lax',
   }
 }));
+
+
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true,
+}));
+
+app.get('/read-cookie', (req, res) => {
+  console.log(req.cookies);
+  console.log(req.cookies.sessionId);
+  res.send(req.cookies);
+});
+
+app.use(cookieParser());
 
 app.use((req, res, next) => {
   if (req.session.user) {
@@ -78,14 +54,14 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   if (req.session.user) {
-    console.log(`Активность сессии для пользователя с ID: ${req.session.user} на ${new Date()}`);
+    console.log(`Активность сессии для пользователя с ID: `+req.session+` на ${new Date()}`);
   }
   next();
 });
 
 const apiToken = process.env.YANDEX_API_KEY;
 const folderToken = process.env.FOLDER_ID;
-async function synthesizeText(text) {
+async function synthesizeText(session_user, text) {
   const params = new URLSearchParams();
   params.append('text', text);
   params.append('voice', 'ermil');
@@ -103,13 +79,12 @@ async function synthesizeText(text) {
       data: params,
       responseType: 'stream', 
   })
-    await uploadToGoogleDrive(response.data);
+    response.data.pipe(fs.createWriteStream(`./requests/${Date.now()}_${session_user}.ogg`));
     console.log('Аудиофайл сохранен');
   } catch (error) {
     console.error('Ошибка при синтезе речи:', error.response?.data || error.message);
   }
 }
-
 
 const { Client } = pg;
 const client = new Client({
@@ -215,32 +190,40 @@ app.post('/log-in', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ message: 'Все поля обязательны' });
   }
+
   try {
     const userCheckQuery = 'SELECT id, password FROM users WHERE login = $1';
     const userCheckResult = await client.query(userCheckQuery, [username]);
 
-    if (userCheckResult.rows.length > 0) {
-      const isMatch = await bcrypt.compare(password, userCheckResult.rows[0].password);
-      if (isMatch) {
-        req.session.user = userCheckResult.rows[0].id;
-        console.log('Сессия сохранена:', req.session);
-        return res.status(200).json({ message: 'Успешный вход' });
-      } else {
-        return res.status(401).json({ message: 'Неправильный логин или пароль. Попробуйте еще раз.' });
-      }
+    if (userCheckResult.rows.length === 0) {
+      return res.status(401).json({ message: 'Неправильные учетные данные' });
     }
+
+    const isMatch = await bcrypt.compare(password, userCheckResult.rows[0].password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Неправильные учетные данные' });
+    }
+
+    req.session.user = userCheckResult.rows[0].id;
+    req.session.save();
+    console.log('Сессия сохранена:', req.session);
+
+    return res.status(200).json({ message: 'Успешный вход' });
   } catch (error) {
     console.error('Ошибка входа пользователя:', error);
-    res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
+    return res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
 });
+
 
 app.post('/api-request', async (req, res) => {
   const { text } = req.body;
   const botReply = `Вы сказали: ${text}`;
+  const session_user = req.session.user;
+  console.log(req.session);
   console.log(text);
   try {
-    synthesizeText(text);
+    synthesizeText(session_user, text);
     return res.status(200).json({ message: 'Обработано', reply: botReply });
   } catch (error) {
     console.error('Ошибка запроса:', error);
