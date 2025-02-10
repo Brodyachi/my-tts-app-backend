@@ -1,4 +1,4 @@
-import {express,nodemailer,bodyParser,cors,bcrypt,pg,path,WebSocketServer,textToSpeech,fs,fileURLToPath,util,multer,cloudinary,session,axios
+import {express,nodemailer,bodyParser,cors,bcrypt,pg,path,WebSocketServer,fs,fileURLToPath,util,multer,session,axios
 } from './dependencies.js';
 
 import dotenv from 'dotenv';
