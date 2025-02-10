@@ -3,6 +3,7 @@ import {express,nodemailer,bodyParser,cors,bcrypt,pg,path,WebSocketServer,textTo
 
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
+import AWS from 'aws-sdk';
 
 dotenv.config({ path: './secret.env' });
 
@@ -60,6 +61,13 @@ app.use((req, res, next) => {
 
 const apiToken = process.env.YANDEX_API_KEY;
 const folderToken = process.env.FOLDER_ID;
+
+const s3 = new AWS.S3({
+  endpoint: 'https://storage.yandexcloud.net',
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+});
+
 async function synthesizeText(session_user, text) {
   const params = new URLSearchParams();
   params.append('text', text);
