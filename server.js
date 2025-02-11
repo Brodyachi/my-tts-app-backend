@@ -3,7 +3,8 @@ import {express,nodemailer,bodyParser,cors,bcrypt,pg,path,WebSocketServer,fs,fil
 
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
-import AWS from 'aws-sdk';
+import pgSession from 'connect-pg-simple';
+import cron from 'node-cron';
 
 dotenv.config({ path: './secret.env' });
 
@@ -13,13 +14,22 @@ const codes = new Map();
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(session({
+  store: new (pgSession(session))({
+    conObject: {
+      user: 'myuser',
+      host: '127.10.11.5',
+      database: 'server',
+      password: 'mypassword',
+      port: 5432,
+    }
+  }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 дней
+    maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: 'lax',
   }
 }));
@@ -35,7 +45,9 @@ app.get('/read-cookie', (req, res) => {
   res.send(req.cookies);
 });
 
-
+const __filename1 = fileURLToPath(import.meta.url);
+const __dirname1 = path.dirname(__filename1);
+app.use('/public', express.static(path.join(__dirname1, 'public')));
 
 app.use((req, res, next) => {
   if (req.session.user) {
@@ -59,14 +71,17 @@ app.use((req, res, next) => {
   next();
 });
 
+cron.schedule('0 0 * * *', async () => {
+  try {
+    await client.query(`DELETE FROM messages WHERE created_at < NOW() - INTERVAL '1 day'`);
+    console.log('Старые сообщения удалены');
+  } catch (error) {
+    console.error('Ошибка при очистке сообщений:', error);
+  }
+});
+
 const apiToken = process.env.YANDEX_API_KEY;
 const folderToken = process.env.FOLDER_ID;
-
-const s3 = new AWS.S3({
-  endpoint: 'https://storage.yandexcloud.net',
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-});
 
 async function synthesizeText(session_user, text) {
   const params = new URLSearchParams();
@@ -241,26 +256,44 @@ app.post('/log-in', async (req, res) => {
 
 app.post('/api-request', async (req, res) => {
   const { text } = req.body;
-  const botReply = `Вы сказали: ${text}`;
   const session_user = req.session.user;
+
+  if (!session_user) {
+    return res.status(401).json({ message: "Сессия не найдена" });
+  }
+
   try {
-    if (!req.session.user) {
-      return res.status(401).json({ message: "Сессия не найдена" });
-    }
-    synthesizeText(req.session.user, text);
-    const userCheckQuery = 'SELECT audio_pos FROM requests WHERE fk_user_id = $1';
+    await client.query(
+      `INSERT INTO messages (user_id, text, sender) VALUES ($1, $2, 'user')`,
+      [session_user, text]
+    );
+
+    await synthesizeText(session_user, text);
+    const userCheckQuery = `
+      SELECT audio_pos FROM requests 
+      WHERE fk_user_id = $1 
+      ORDER BY id DESC LIMIT 1
+    `;
     const userCheckResult = await client.query(userCheckQuery, [session_user]);
+
     if (userCheckResult.rows.length > 0) {
       const audioUrl = userCheckResult.rows[0].audio_pos;
+      await client.query(
+        `INSERT INTO messages (user_id, text, sender) VALUES ($1, $2, 'bot')`,
+        [session_user, audioUrl]
+      );
+
       return res.status(200).json({ request_url: audioUrl });
     } else {
-      return res.status(404).json({ message: "Audio file not found" });
+      return res.status(404).json({ message: "Аудиофайл не найден" });
     }
   } catch (error) {
     console.error('Ошибка запроса:', error);
     res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
 });
+
+
 
 
 app.post('/log-out', (req, res) => {
@@ -300,4 +333,24 @@ app.get('/profile', (req, res) => {
     return res.status(401).json({ message: 'Пользователь не авторизован' });
   }
   res.status(200).json({ message: 'Профиль', userId: req.session.user });
+});
+
+app.get('/chat-history', async (req, res) => {
+  const session_user = req.session.user;
+  if (!session_user) {
+    return res.status(401).json({ message: "Сессия не найдена" });
+  }
+
+  try {
+    const messagesQuery = `
+      SELECT text, sender, created_at FROM messages
+      WHERE user_id = $1 ORDER BY created_at ASC
+    `;
+    const messages = await client.query(messagesQuery, [session_user]);
+
+    return res.status(200).json(messages.rows);
+  } catch (error) {
+    console.error('Ошибка получения истории чата:', error);
+    return res.status(500).json({ message: "Ошибка сервера" });
+  }
 });
