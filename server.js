@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import pgSession from 'connect-pg-simple';
 import cron from 'node-cron';
+import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
 
 dotenv.config({ path: './secret.env' });
 
@@ -16,10 +18,10 @@ app.use(cookieParser());
 app.use(session({
   store: new (pgSession(session))({
     conObject: {
-      user: 'postgres',
-      host: 'postgres-production-bf78.up.railway.app',
-      database: 'railway',
-      password: 'PFbnCFYkGJElzquMUvTwnmgzORZKWsWE',
+      user: 'myuser',
+      host: '127.10.11.5',
+      database: 'server',
+      password: 'mypassword',
       port: 5432,
     }
   }),
@@ -35,7 +37,7 @@ app.use(session({
 }));
 
 app.use(cors({
-  origin: 'https//tabularsa.com:5173',
+  origin: 'http://localhost:5173',
   credentials: true,
 }));
 
@@ -352,5 +354,77 @@ app.get('/chat-history', async (req, res) => {
   } catch (error) {
     console.error('Ошибка получения истории чата:', error);
     return res.status(500).json({ message: "Ошибка сервера" });
+  }
+});
+
+async function readFileContent(filePath, fileType) {
+  try {
+    if (fileType === 'text/plain') {
+      return fs.readFileSync(filePath, 'utf-8');
+    } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      const result = await mammoth.extractRawText({ path: filePath });
+      return result.value;
+    } else if (fileType === 'application/pdf') {
+      const dataBuffer = fs.readFileSync(filePath);
+      const loadingTask = pdfjsLib.getDocument(dataBuffer);
+      const pdf = await loadingTask.promise;
+      let textContent = '';
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const text = await page.getTextContent();
+        text.items.forEach((item) => {
+          textContent += item.str + ' ';
+        });
+      }
+
+      return textContent;
+    } else {
+      throw new Error('Неподдерживаемый формат файла');
+    }
+  } catch (error) {
+    console.error('Ошибка чтения файла:', error);
+    throw error;
+  }
+}
+
+const upload = multer({ dest: 'uploads/' });
+
+app.post('/upload-document', upload.single('document'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Файл не загружен' });
+  }
+  const session_user = req.session.user;
+  if (!session_user) {
+    return res.status(401).json({ message: "Сессия не найдена" });
+  }
+  try {
+    const filePath = req.file.path;
+    const fileType = req.file.mimetype;
+    const fileContent = await readFileContent(filePath, fileType);
+    fs.unlinkSync(filePath);
+    await synthesizeText(session_user, fileContent);
+
+    const userCheckQuery = `
+      SELECT audio_pos FROM requests 
+      WHERE fk_user_id = $1 
+      ORDER BY id DESC LIMIT 1
+    `;
+    const userCheckResult = await client.query(userCheckQuery, [session_user]);
+
+    if (userCheckResult.rows.length > 0) {
+      const audioUrl = userCheckResult.rows[0].audio_pos;
+      await client.query(
+        `INSERT INTO messages (user_id, text, sender) VALUES ($1, $2, 'bot')`,
+        [session_user, audioUrl]
+      );
+
+      return res.status(200).json({ request_url: audioUrl });
+    } else {
+      return res.status(404).json({ message: "Аудиофайл не найден" });
+    }
+  } catch (error) {
+    console.error('Ошибка обработки документа:', error);
+    res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
 });
