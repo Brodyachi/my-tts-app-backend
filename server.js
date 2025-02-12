@@ -16,10 +16,10 @@ app.use(cookieParser());
 app.use(session({
   store: new (pgSession(session))({
     conObject: {
-      user: 'myuser',
-      host: '127.10.11.5',
-      database: 'server',
-      password: 'mypassword',
+      user: 'postgres',
+      host: 'postgres-production-bf78.up.railway.app',
+      database: 'railway',
+      password: 'PFbnCFYkGJElzquMUvTwnmgzORZKWsWE',
       port: 5432,
     }
   }),
@@ -35,7 +35,7 @@ app.use(session({
 }));
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: 'https//tabularsa.com:5173',
   credentials: true,
 }));
 
