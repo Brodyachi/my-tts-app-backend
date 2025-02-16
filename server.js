@@ -346,7 +346,8 @@ app.get('/chat-history', async (req, res) => {
   try {
     const messagesQuery = `
       SELECT text, sender, created_at FROM messages
-      WHERE user_id = $1 ORDER BY created_at ASC
+      WHERE user_id = $1 
+      ORDER BY created_at ASC
     `;
     const messages = await client.query(messagesQuery, [session_user]);
 
@@ -401,10 +402,16 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
   try {
     const filePath = req.file.path;
     const fileType = req.file.mimetype;
+    const fileName = req.file.originalname;
+    await client.query(
+      `INSERT INTO messages (user_id, text, sender) 
+       VALUES ($1, $2, 'user')`,
+      [session_user, `Файл: ${fileName}`]
+    );
     const fileContent = await readFileContent(filePath, fileType);
     fs.unlinkSync(filePath);
-    await synthesizeText(session_user, fileContent);
 
+    await synthesizeText(session_user, fileContent);
     const userCheckQuery = `
       SELECT audio_pos FROM requests 
       WHERE fk_user_id = $1 
@@ -415,7 +422,8 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
     if (userCheckResult.rows.length > 0) {
       const audioUrl = userCheckResult.rows[0].audio_pos;
       await client.query(
-        `INSERT INTO messages (user_id, text, sender) VALUES ($1, $2, 'bot')`,
+        `INSERT INTO messages (user_id, text, sender) 
+         VALUES ($1, $2, 'bot')`,
         [session_user, audioUrl]
       );
 
