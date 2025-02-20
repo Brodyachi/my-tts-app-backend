@@ -85,14 +85,14 @@ cron.schedule('0 0 * * *', async () => {
 const apiToken = process.env.YANDEX_API_KEY;
 const folderToken = process.env.FOLDER_ID;
 
-async function synthesizeText(session_user, text) {
+async function synthesizeText(session_user, text, voice, emotion, speed, format) {
   const params = new URLSearchParams();
   params.append('text', text);
-  params.append('voice', 'ermil');
-  params.append('emotion', 'neutral');
+  params.append('voice', voice);
+  params.append('emotion', emotion);
   params.append('lang', 'ru-RU');
-  params.append('speed', '0.7');
-  params.append('format', 'oggopus');
+  params.append('speed', speed);
+  params.append('format', format);
 
   try {
     const response = await axios({
@@ -257,7 +257,11 @@ app.post('/log-in', async (req, res) => {
 
 
 app.post('/api-request', async (req, res) => {
-  const { text } = req.body;
+  const { text, ttsSettings} = req.body;
+  const voice = ttsSettings.voice;
+  const emotion = ttsSettings.emotion;
+  const speed = ttsSettings.speed;
+  const format = ttsSettings.format;
   const session_user = req.session.user;
 
   if (!session_user) {
@@ -270,7 +274,7 @@ app.post('/api-request', async (req, res) => {
       [session_user, text]
     );
 
-    await synthesizeText(session_user, text);
+    await synthesizeText(session_user, text, voice, emotion, speed, format);
     const userCheckQuery = `
       SELECT audio_pos FROM requests 
       WHERE fk_user_id = $1 
