@@ -341,6 +341,10 @@ app.get('/profile', (req, res) => {
   res.status(200).json({ message: 'Профиль', userId: req.session.user });
 });
 
+app.get('/password-reset', (req, res) => {
+  const session_user = req.session.user;
+});
+
 app.get('/chat-history', async (req, res) => {
   const session_user = req.session.user;
   if (!session_user) {
