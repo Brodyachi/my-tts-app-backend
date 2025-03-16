@@ -1,18 +1,34 @@
-import {express,nodemailer,bodyParser,cors,bcrypt,pg,path,WebSocketServer,fs,fileURLToPath,util,multer,session,axios
-} from './dependencies.js';
-
+import { express, nodemailer, bodyParser, cors, bcrypt, pg, path, WebSocketServer, fs, fileURLToPath, util, multer, session, axios } from './dependencies.js';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import pgSession from 'connect-pg-simple';
 import cron from 'node-cron';
 import mammoth from 'mammoth';
+import logger from 'winston';
 import * as pdfjsLib from 'pdfjs-dist';
+import DOMPurify from 'dompurify';
+import JSDOM from 'jsdom';
+import hpp from 'hpp';
 
 dotenv.config({ path: './secret.env' });
 
+function pass_gen(len) {
+  const chrs = 'abdehkmnpswxzABDEFGHKMNPQRSTWXZ123456789!@#$%^&*()';
+  let str = '';
+  for (let i = 0; i < len; i++) {
+    const pos = Math.floor(Math.random() * chrs.length);
+    str += chrs.substring(pos, pos + 1);
+  }
+  return str;
+}
+
 const PORT = 5001;
 const app = express();
-const codes = new Map(); 
+const window = new JSDOM.JSDOM('').window;
+const purify = DOMPurify(window);
+const codes = new Map();
+
+app.use(hpp());
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(session({
@@ -41,12 +57,6 @@ app.use(cors({
   credentials: true,
 }));
 
-app.get('/read-cookie', (req, res) => {
-  console.log(req.cookies);
-  console.log(req.cookies.sessionId);
-  res.send(req.cookies);
-});
-
 const __filename1 = fileURLToPath(import.meta.url);
 const __dirname1 = path.dirname(__filename1);
 app.use('/public', express.static(path.join(__dirname1, 'public')));
@@ -55,9 +65,9 @@ app.use((req, res, next) => {
   if (req.session.user) {
     const now = Date.now();
     if (now - (req.session.lastActivity || now) > 30 * 60 * 1000) {
-      console.log(`Сессия завершена из-за бездействия: ${req.session.user}`);
+      logger.info(`Сессия завершена из-за бездействия: ${req.session.user}`);
       req.session.destroy(err => {
-        if (err) console.error('Ошибка при удалении сессии:', err);
+        if (err) logger.error('Ошибка при удалении сессии:', err);
       });
       return res.status(401).json({ message: 'Сессия истекла, войдите снова' });
     }
@@ -68,7 +78,7 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   if (req.session.user) {
-    console.log(`Активность пользователя ${req.session.user} на ${new Date().toISOString()}`);
+    logger.info(`Активность пользователя ${req.session.user} на ${new Date().toISOString()}`);
   }
   next();
 });
@@ -76,9 +86,9 @@ app.use((req, res, next) => {
 cron.schedule('0 0 * * *', async () => {
   try {
     await client.query(`DELETE FROM messages WHERE created_at < NOW() - INTERVAL '1 day'`);
-    console.log('Старые сообщения удалены');
+    logger.info('Старые сообщения удалены');
   } catch (error) {
-    console.error('Ошибка при очистке сообщений:', error);
+    logger.error('Ошибка при очистке сообщений:', error);
   }
 });
 
@@ -113,28 +123,32 @@ async function synthesizeText(session_user, text, voice, emotion, speed, format)
 
     await new Promise((resolve, reject) => {
       writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
+      writeStream.on('error', (err) => {
+        logger.error('Ошибка записи файла:', err);
+        fs.unlinkSync(request_string);
+        reject(err);
+      });
     });
 
     const insertQuery = 'INSERT INTO requests (fk_user_id, audio_pos) VALUES ($1, $2)';
     await client.query(insertQuery, [session_user, `http://localhost:5001/public/requests/${filename}`]);
 
-    console.log('Аудиофайл сохранен:', request_string);
+    logger.info('Аудиофайл сохранен:', request_string);
     return request_string;
   } catch (error) {
-    console.error('Ошибка при синтезе речи:', error.response?.data || error.message);
+    logger.error('Ошибка при синтезе речи:', error.response?.data || error.message);
     throw new Error('Ошибка при синтезе речи');
   }
 }
 
 const { Client } = pg;
 const client = new Client({
-    user: 'myuser',
-    host: '127.10.11.5',
-    database: 'server',
-    password: 'mypassword',
-    port: 5432,  
-})
+  user: 'myuser',
+  host: '127.10.11.5',
+  database: 'server',
+  password: 'mypassword',
+  port: 5432,
+});
 
 await client.connect();
 
@@ -142,26 +156,26 @@ const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
   auth: {
-      user: 'rasamailapllication@gmail.com',
-      pass: process.env.EMAIL_PASSWORD,
+    user: 'rasamailapllication@gmail.com',
+    pass: process.env.EMAIL_PASSWORD,
   }
 });
 
 app.listen(PORT, () => {
-  console.log('Сервер работает');
+  logger.info(`Сервер работает на порту ${PORT}`);
 });
 
 app.get('/', (req, res) => {
-    res.send('Hello');
+  res.send('Hello');
 });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const templatePath = path.join(__dirname, 'emailTemplate.html');
+const templateEPath = path.join(__dirname, 'emailTemplate.html');
+const templatePPath = path.join(__dirname, 'passwordTemplate.html');
 
 app.post('/send-code', (req, res) => {
   const email = req.body.email;
-
 
   if (!email) {
     return res.status(400).json({ message: 'Email обязателен' });
@@ -169,7 +183,7 @@ app.post('/send-code', (req, res) => {
 
   const code = Math.floor(100000 + Math.random() * 900000);
   codes.set(email, { code, expires: Date.now() + 10 * 60 * 1000 });
-  let htmlTemplate = fs.readFileSync(templatePath, 'utf-8');
+  let htmlTemplate = fs.readFileSync(templateEPath, 'utf-8');
   htmlTemplate = htmlTemplate.replace('${email}', email).replace('${code}', code);
   const mailOptions = {
     from: '"Joe Peach 🍑"<rasamailapllication@gmail.com>',
@@ -180,10 +194,49 @@ app.post('/send-code', (req, res) => {
   };
   transporter.sendMail(mailOptions, (error) => {
     if (error) {
+      logger.error('Ошибка отправки кода:', error);
       return res.status(500).json({ message: 'Ошибка отправки кода' });
     }
     res.status(200).json({ message: 'Код отправлен успешно' });
   });
+});
+
+app.post('/password-reset', async (req, res) => {
+  const email = req.body.email;
+  if (!email) {
+    return res.status(400).json({ message: 'Email обязателен' });
+  }
+  try {
+    const emailCheckQuery = 'SELECT * FROM users WHERE email = $1';
+    const emailCheckResult = await client.query(emailCheckQuery, [email]);
+    if (emailCheckResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь с такой почтой не найден' });
+    }
+    const code = pass_gen(12);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(code, salt);
+    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE email = $2';
+    await client.query(updatePasswordQuery, [hashedPassword, email]);
+    let htmlTemplate = fs.readFileSync(templatePPath, 'utf-8');
+    htmlTemplate = htmlTemplate.replace('${email}', email).replace('${code}', code);
+    const mailOptions = {
+      from: '"Joe Peach 🍑"<rasamailapllication@gmail.com>',
+      to: email,
+      subject: 'RASA Registration Process',
+      text: `Ваш пароль сброшен, новый пароль: ${code}`,
+      html: htmlTemplate,
+    };
+    transporter.sendMail(mailOptions, (error) => {
+      if (error) {
+        logger.error('Ошибка сброса пароля:', error);
+        return res.status(500).json({ message: 'Ошибка сброса пароля' });
+      }
+      res.status(200).json({ message: 'Пароль сброшен успешно' });
+    });
+  } catch (error) {
+    logger.error('Ошибка сброса пароля:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
 });
 
 app.post('/verify-code', async (req, res) => {
@@ -220,7 +273,7 @@ app.post('/verify-code', async (req, res) => {
 
     res.status(201).json({ message: 'Пользователь зарегистрирован успешно', success: true });
   } catch (error) {
-    console.error('Ошибка регистрации пользователя:', error);
+    logger.error('Ошибка регистрации пользователя:', error);
     res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
 });
@@ -246,18 +299,17 @@ app.post('/log-in', async (req, res) => {
     }
 
     req.session.user = userCheckResult.rows[0].id;
-    console.log('Сессия сохранена:', req.session);
+    logger.info('Сессия сохранена:', req.session);
 
     return res.status(200).json({ message: 'Успешный вход' });
   } catch (error) {
-    console.error('Ошибка входа пользователя:', error);
+    logger.error('Ошибка входа пользователя:', error);
     return res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
 });
 
-
 app.post('/api-request', async (req, res) => {
-  const { text, ttsSettings} = req.body;
+  const { text, ttsSettings } = req.body;
   const voice = ttsSettings.voice;
   const emotion = ttsSettings.emotion;
   const speed = ttsSettings.speed;
@@ -294,19 +346,17 @@ app.post('/api-request', async (req, res) => {
       return res.status(404).json({ message: "Аудиофайл не найден" });
     }
   } catch (error) {
-    console.error('Ошибка запроса:', error);
+    logger.error('Ошибка запроса:', error);
     res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
 });
 
-
-
-
 app.post('/log-out', (req, res) => {
   if (req.session.user) {
-    console.log(`Сессия завершена для пользователя с ID: ${req.session.user}`);
+    logger.info(`Сессия завершена для пользователя с ID: ${req.session.user}`);
     req.session.destroy((err) => {
       if (err) {
+        logger.error('Ошибка при завершении сессии:', err);
         return res.status(500).json({ message: 'Ошибка при завершении сессии' });
       }
       res.status(200).json({ message: 'Выход выполнен успешно' });
@@ -318,31 +368,26 @@ app.post('/log-out', (req, res) => {
 
 app.get('/session-info', (req, res) => {
   if (req.session.user) {
-      const remainingTime = req.session.cookie.expires
-          ? new Date(req.session.cookie.expires) - Date.now()
-          : req.session.cookie.maxAge;
+    const remainingTime = req.session.cookie.expires
+      ? new Date(req.session.cookie.expires) - Date.now()
+      : req.session.cookie.maxAge;
 
-      console.log(`Сессия пользователя: ${JSON.stringify(req.session.user, null, 2)}`);
-      console.log(`Оставшееся время сессии: ${Math.round(remainingTime / 1000)} сек`);
+    logger.info(`Сессия пользователя: ${JSON.stringify(req.session.user, null, 2)}`);
+    logger.info(`Оставшееся время сессии: ${Math.round(remainingTime / 1000)} сек`);
 
-      return res.json({ 
-          user: req.session.user, 
-          remainingTime: Math.round(remainingTime / 1000) 
-      });
+    return res.json({
+      user: req.session.user,
+      remainingTime: Math.round(remainingTime / 1000)
+    });
   }
   res.status(401).json({ message: 'Нет активной сессии' });
 });
-
 
 app.get('/profile', (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ message: 'Пользователь не авторизован' });
   }
   res.status(200).json({ message: 'Профиль', userId: req.session.user });
-});
-
-app.get('/password-reset', (req, res) => {
-  const session_user = req.session.user;
 });
 
 app.get('/chat-history', async (req, res) => {
@@ -361,7 +406,7 @@ app.get('/chat-history', async (req, res) => {
 
     return res.status(200).json(messages.rows);
   } catch (error) {
-    console.error('Ошибка получения истории чата:', error);
+    logger.error('Ошибка получения истории чата:', error);
     return res.status(500).json({ message: "Ошибка сервера" });
   }
 });
@@ -392,12 +437,23 @@ async function readFileContent(filePath, fileType) {
       throw new Error('Неподдерживаемый формат файла');
     }
   } catch (error) {
-    console.error('Ошибка чтения файла:', error);
+    logger.error('Ошибка чтения файла:', error);
     throw error;
   }
 }
 
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['text/plain', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Неподдерживаемый формат файла'), false);
+    }
+  }
+});
 
 app.post('/upload-document', upload.single('document'), async (req, res) => {
   if (!req.file) {
@@ -440,7 +496,41 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
       return res.status(404).json({ message: "Аудиофайл не найден" });
     }
   } catch (error) {
-    console.error('Ошибка обработки документа:', error);
+    logger.error('Ошибка обработки документа:', error);
     res.status(500).json({ message: 'Внутренняя ошибка сервера', success: false });
   }
 });
+
+// app.post('/change-password', async (req, res) => {
+//   const { oldPassword, newPassword } = req.body;
+//   const session_user = req.session.user;
+
+//   if (!session_user) {
+//     return res.status(401).json({ message: 'Пользователь не авторизован' });
+//   }
+
+//   try {
+//     const userCheckQuery = 'SELECT password FROM users WHERE id = $1';
+//     const userCheckResult = await client.query(userCheckQuery, [session_user]);
+
+//     if (userCheckResult.rows.length === 0) {
+//       return res.status(404).json({ message: 'Пользователь не найден' });
+//     }
+
+//     const isMatch = await bcrypt.compare(oldPassword, userCheckResult.rows[0].password);
+//     if (!isMatch) {
+//       return res.status(401).json({ message: 'Неверный старый пароль' });
+//     }
+
+//     const salt = await bcrypt.genSalt(10);
+//     const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+//     const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2';
+//     await client.query(updatePasswordQuery, [hashedPassword, session_user]);
+
+//     res.status(200).json({ message: 'Пароль успешно изменен' });
+//   } catch (error) {
+//     logger.error('Ошибка смены пароля:', error);
+//     res.status(500).json({ message: 'Внутренняя ошибка сервера' });
+//   }
+// });
