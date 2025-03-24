@@ -418,6 +418,7 @@ async function readFileContent(filePath, fileType) {
     } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       const result = await mammoth.extractRawText({ path: filePath });
       return result.value;
+      
     } else if (fileType === 'application/pdf') {
       const dataBuffer = fs.readFileSync(filePath);
       const loadingTask = pdfjsLib.getDocument(dataBuffer);
@@ -474,8 +475,7 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
     );
     const fileContent = await readFileContent(filePath, fileType);
     fs.unlinkSync(filePath);
-
-    await synthesizeText(session_user, fileContent);
+    await synthesizeText(session_user, fileContent, voice, emotion, speed, format);
     const userCheckQuery = `
       SELECT audio_pos FROM requests 
       WHERE fk_user_id = $1 
