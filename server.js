@@ -457,6 +457,12 @@ const upload = multer({
 });
 
 app.post('/upload-document', upload.single('document'), async (req, res) => {
+  const file = req.file;
+  const ttsSettings = JSON.parse(req.body.ttsSettings);
+  const voice = ttsSettings.voice;
+  const emotion = ttsSettings.emotion;
+  const speed = ttsSettings.speed;
+  const format = ttsSettings.format;
   if (!req.file) {
     return res.status(400).json({ message: 'Файл не загружен' });
   }
