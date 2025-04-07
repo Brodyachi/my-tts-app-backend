@@ -18,10 +18,10 @@ app.use(cookieParser());
 app.use(session({
   store: new (pgSession(session))({
     conObject: {
-      user: 'myuser',
+      user: 'postgres',
       host: '127.10.11.5',
       database: 'server',
-      password: 'mypassword',
+      password: '123321',
       port: 5432,
     }
   }),
@@ -129,10 +129,10 @@ async function synthesizeText(session_user, text) {
 
 const { Client } = pg;
 const client = new Client({
-    user: 'myuser',
+    user: 'postgres',
     host: '127.10.11.5',
     database: 'server',
-    password: 'mypassword',
+    password: '123321',
     port: 5432,  
 })
 
