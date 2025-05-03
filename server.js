@@ -53,8 +53,10 @@ app.use(session({
 }));
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], // Добавить все нужные origin
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 const __filename1 = fileURLToPath(import.meta.url);
@@ -91,6 +93,8 @@ cron.schedule('0 0 * * *', async () => {
     logger.error('Ошибка при очистке сообщений:', error);
   }
 });
+
+
 
 const apiToken = process.env.YANDEX_API_KEY;
 const folderToken = process.env.FOLDER_ID;
@@ -507,37 +511,70 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
   }
 });
 
-// app.post('/change-password', async (req, res) => {
-//   const { oldPassword, newPassword } = req.body;
-//   const session_user = req.session.user;
+app.post('/change-password', async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  const session_user = req.session.user;
 
-//   if (!session_user) {
-//     return res.status(401).json({ message: 'Пользователь не авторизован' });
-//   }
+  if (!session_user) {
+    return res.status(401).json({ message: 'Пользователь не авторизован' });
+  }
 
-//   try {
-//     const userCheckQuery = 'SELECT password FROM users WHERE id = $1';
-//     const userCheckResult = await client.query(userCheckQuery, [session_user]);
+  try {
+    const userCheckQuery = 'SELECT password FROM users WHERE id = $1';
+    const userCheckResult = await client.query(userCheckQuery, [session_user]);
 
-//     if (userCheckResult.rows.length === 0) {
-//       return res.status(404).json({ message: 'Пользователь не найден' });
-//     }
+    if (userCheckResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+    const isMatch = await bcrypt.compare(oldPassword, userCheckResult.rows[0].password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Неверный старый пароль' });
+    }
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2';
+    await client.query(updatePasswordQuery, [hashedPassword, session_user]);
+    const deleteSessionsQuery = 'DELETE FROM user_sessions WHERE sess->>\'user\' = $1';
+    await client.query(deleteSessionsQuery, [session_user.toString()]);
+    req.session.destroy((err) => {
+      if (err) {
+        logger.error('Ошибка при завершении сессии:', err);
+        return res.status(500).json({ message: 'Ошибка при выходе из системы' });
+      }
+      res.clearCookie('sessionId', {
+        path: '/',
+        domain: process.env.NODE_ENV === 'production' ? 'localhost:5173' : undefined,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production'
+      });
 
-//     const isMatch = await bcrypt.compare(oldPassword, userCheckResult.rows[0].password);
-//     if (!isMatch) {
-//       return res.status(401).json({ message: 'Неверный старый пароль' });
-//     }
+      res.status(200).json({ 
+        message: 'Пароль успешно изменен. Вы вышли из всех устройств.',
+        logout: true 
+      });
+    });
+  } catch (error) {
+    logger.error('Ошибка смены пароля:', error);
+    res.status(500).json({ message: 'Внутренняя ошибка сервера' });
+  }
+});
 
-//     const salt = await bcrypt.genSalt(10);
-//     const hashedPassword = await bcrypt.hash(newPassword, salt);
+app.get('/user/:id', async (req, res) => {
+  if (!req.session.user || req.session.user != req.params.id) {
+    return res.status(403).json({ message: 'Доступ запрещен' });
+  }
 
-//     const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2';
-//     await client.query(updatePasswordQuery, [hashedPassword, session_user]);
+  try {
+    const userQuery = 'SELECT id, login, email, created_at FROM users WHERE id = $1';
+    const userResult = await client.query(userQuery, [req.params.id]);
 
-//     res.status(200).json({ message: 'Пароль успешно изменен' });
-//   } catch (error) {
-//     logger.error('Ошибка смены пароля:', error);
-//     res.status(500).json({ message: 'Внутренняя ошибка сервера' });
-//   }
-// });
-/// .... Just for pull
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    res.status(200).json(userResult.rows[0]);
+  } catch (error) {
+    logger.error('Ошибка получения данных пользователя:', error);
+    res.status(500).json({ message: 'Внутренняя ошибка сервера' });
+  }
+});
