@@ -511,7 +511,7 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
   }
 });
 
-app.post('/change-password', async (req, res) => {
+app.post('/changepassword', async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const session_user = req.session.user;
 
@@ -534,25 +534,10 @@ app.post('/change-password', async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, salt);
     const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2';
     await client.query(updatePasswordQuery, [hashedPassword, session_user]);
-    const deleteSessionsQuery = 'DELETE FROM user_sessions WHERE sess->>\'user\' = $1';
-    await client.query(deleteSessionsQuery, [session_user.toString()]);
-    req.session.destroy((err) => {
-      if (err) {
-        logger.error('Ошибка при завершении сессии:', err);
-        return res.status(500).json({ message: 'Ошибка при выходе из системы' });
-      }
-      res.clearCookie('sessionId', {
-        path: '/',
-        domain: process.env.NODE_ENV === 'production' ? 'localhost:5173' : undefined,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production'
-      });
-
-      res.status(200).json({ 
+      return res.status(200).json({ 
         message: 'Пароль успешно изменен. Вы вышли из всех устройств.',
         logout: true 
       });
-    });
   } catch (error) {
     logger.error('Ошибка смены пароля:', error);
     res.status(500).json({ message: 'Внутренняя ошибка сервера' });
@@ -565,7 +550,7 @@ app.get('/user/:id', async (req, res) => {
   }
 
   try {
-    const userQuery = 'SELECT id, login, email, created_at FROM users WHERE id = $1';
+    const userQuery = 'SELECT id, login, email FROM users WHERE id = $1';
     const userResult = await client.query(userQuery, [req.params.id]);
 
     if (userResult.rows.length === 0) {
