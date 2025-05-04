@@ -357,16 +357,27 @@ app.post('/api-request', async (req, res) => {
 
 app.post('/log-out', (req, res) => {
   if (req.session.user) {
-    logger.info(`Сессия завершена для пользователя с ID: ${req.session.user}`);
+    logger.info(`Сессия закрыта для пользователя: ${req.session.user}`);
+
+    res.clearCookie('connect.sid', {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict'
+    });
+    
     req.session.destroy((err) => {
       if (err) {
-        logger.error('Ошибка при завершении сессии:', err);
-        return res.status(500).json({ message: 'Ошибка при завершении сессии' });
+        logger.error('Ошибка закрытия сессии:', err);
+        return res.status(500).json({ message: 'Logout failed' });
       }
-      res.status(200).json({ message: 'Выход выполнен успешно' });
+      return res.status(200).json({ 
+        message: 'Успешный выход',
+        logout: true 
+      });
     });
   } else {
-    res.status(400).json({ message: 'Пользователь не авторизован' });
+    res.status(401).json({ message: 'Пользователь не авторизован' });
   }
 });
 
