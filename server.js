@@ -10,6 +10,12 @@ import DOMPurify from 'dompurify';
 import JSDOM from 'jsdom';
 import hpp from 'hpp';
 
+const { Pool } = pg;
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
 dotenv.config({ path: './secret.env' });
 
 function pass_gen(len) {
