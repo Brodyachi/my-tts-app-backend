@@ -47,16 +47,19 @@ app.use(session({
   }
 }));
 
-app.use(cors({
+const corsOptions = {
   origin: [
-    'http://localhost:5173', 
-    'http://127.0.0.1:5173',
-    'https://my-tts-app-frontend-vite.onrender.com/'
+    'https://my-tts-app-frontend-vite.onrender.com',
+    'http://localhost:5173'
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
-}));
+};
+
+app.use(cors(corsOptions));
+
+app.options('*', cors(corsOptions));
 
 const __filename1 = fileURLToPath(import.meta.url);
 const __dirname1 = path.dirname(__filename1);
