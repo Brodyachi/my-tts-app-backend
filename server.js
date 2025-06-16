@@ -134,7 +134,7 @@ async function synthesizeText(session_user, text, voice, emotion, speed, format)
     });
 
     const insertQuery = 'INSERT INTO requests (fk_user_id, audio_pos) VALUES ($1, $2)';
-    await client.query(insertQuery, [session_user, `http://localhost:5001/public/requests/${filename}`]);
+    await client.query(insertQuery, [session_user, `https://rasa-tts-server.onrender.com/public/requests/${filename}`]);
 
     logger.info('Аудиофайл сохранен:', request_string);
     return request_string;
