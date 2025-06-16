@@ -89,7 +89,7 @@ app.use((req, res, next) => {
 
 cron.schedule('0 0 * * *', async () => {
   try {
-    await client.query(`DELETE FROM messages WHERE created_at < NOW() - INTERVAL '1 day'`);
+    await pool.query(`DELETE FROM messages WHERE created_at < NOW() - INTERVAL '1 day'`);
     logger.info('Старые сообщения удалены');
   } catch (error) {
     logger.error('Ошибка при очистке сообщений:', error);
@@ -137,7 +137,7 @@ async function synthesizeText(session_user, text, voice, emotion, speed, format)
     });
 
     const insertQuery = 'INSERT INTO requests (fk_user_id, audio_pos) VALUES ($1, $2)';
-    await client.query(insertQuery, [session_user, `https://rasa-tts-server.onrender.com/public/requests/${filename}`]);
+    await pool.query(insertQuery, [session_user, `https://rasa-tts-server.onrender.com/public/requests/${filename}`]);
 
     logger.info('Аудиофайл сохранен:', request_string);
     return request_string;
@@ -203,7 +203,7 @@ app.post('/password-reset', async (req, res) => {
   }
   try {
     const emailCheckQuery = 'SELECT * FROM users WHERE email = $1';
-    const emailCheckResult = await client.query(emailCheckQuery, [email]);
+    const emailCheckResult = await pool.query(emailCheckQuery, [email]);
     if (emailCheckResult.rows.length === 0) {
       return res.status(404).json({ message: 'Пользователь с такой почтой не найден' });
     }
@@ -211,7 +211,7 @@ app.post('/password-reset', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(code, salt);
     const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE email = $2';
-    await client.query(updatePasswordQuery, [hashedPassword, email]);
+    await pool.query(updatePasswordQuery, [hashedPassword, email]);
     let htmlTemplate = fs.readFileSync(templatePPath, 'utf-8');
     htmlTemplate = htmlTemplate.replace('${email}', email).replace('${code}', code);
     const mailOptions = {
@@ -250,9 +250,9 @@ app.post('/verify-code', async (req, res) => {
 
   try {
     const userCheckQuery = 'SELECT * FROM users WHERE login = $1';
-    const userCheckResult = await client.query(userCheckQuery, [username]);
+    const userCheckResult = await pool.query(userCheckQuery, [username]);
     const emailCheckQuery = 'SELECT * FROM users WHERE email = $1';
-    const emailCheckResult = await client.query(emailCheckQuery, [email]);
+    const emailCheckResult = await pool.query(emailCheckQuery, [email]);
     if (emailCheckResult.rows.length > 0) {
       return res.status(400).json({ message: 'Email уже зарегистрирован' });
     }
@@ -264,7 +264,7 @@ app.post('/verify-code', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const insertQuery = 'INSERT INTO users (login, password, email) VALUES ($1, $2, $3)';
-    await client.query(insertQuery, [username, hashedPassword, email]);
+    await pool.query(insertQuery, [username, hashedPassword, email]);
 
     res.status(201).json({ message: 'Пользователь зарегистрирован успешно', success: true });
   } catch (error) {
@@ -282,7 +282,7 @@ app.post('/log-in', async (req, res) => {
 
   try {
     const userCheckQuery = 'SELECT id, password FROM users WHERE login = $1';
-    const userCheckResult = await client.query(userCheckQuery, [username]);
+    const userCheckResult = await pool.query(userCheckQuery, [username]);
 
     if (userCheckResult.rows.length === 0) {
       return res.status(401).json({ message: 'Неправильные учетные данные' });
@@ -316,7 +316,7 @@ app.post('/api-request', async (req, res) => {
   }
 
   try {
-    await client.query(
+    await pool.query(
       `INSERT INTO messages (user_id, text, sender) VALUES ($1, $2, 'user')`,
       [session_user, text]
     );
@@ -327,11 +327,11 @@ app.post('/api-request', async (req, res) => {
       WHERE fk_user_id = $1 
       ORDER BY id DESC LIMIT 1
     `;
-    const userCheckResult = await client.query(userCheckQuery, [session_user]);
+    const userCheckResult = await pool.query(userCheckQuery, [session_user]);
 
     if (userCheckResult.rows.length > 0) {
       const audioUrl = userCheckResult.rows[0].audio_pos;
-      await client.query(
+      await pool.query(
         `INSERT INTO messages (user_id, text, sender) VALUES ($1, $2, 'bot')`,
         [session_user, audioUrl]
       );
@@ -408,7 +408,7 @@ app.get('/chat-history', async (req, res) => {
       WHERE user_id = $1 
       ORDER BY created_at ASC
     `;
-    const messages = await client.query(messagesQuery, [session_user]);
+    const messages = await pool.query(messagesQuery, [session_user]);
 
     return res.status(200).json(messages.rows);
   } catch (error) {
@@ -480,7 +480,7 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
     const filePath = req.file.path;
     const fileType = req.file.mimetype;
     const fileName = req.file.originalname;
-    await client.query(
+    await pool.query(
       `INSERT INTO messages (user_id, text, sender) 
        VALUES ($1, $2, 'user')`,
       [session_user, `Файл: ${fileName}`]
@@ -493,11 +493,11 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
       WHERE fk_user_id = $1 
       ORDER BY id DESC LIMIT 1
     `;
-    const userCheckResult = await client.query(userCheckQuery, [session_user]);
+    const userCheckResult = await pool.query(userCheckQuery, [session_user]);
 
     if (userCheckResult.rows.length > 0) {
       const audioUrl = userCheckResult.rows[0].audio_pos;
-      await client.query(
+      await pool.query(
         `INSERT INTO messages (user_id, text, sender) 
          VALUES ($1, $2, 'bot')`,
         [session_user, audioUrl]
@@ -523,7 +523,7 @@ app.post('/changepassword', async (req, res) => {
 
   try {
     const userCheckQuery = 'SELECT password FROM users WHERE id = $1';
-    const userCheckResult = await client.query(userCheckQuery, [session_user]);
+    const userCheckResult = await pool.query(userCheckQuery, [session_user]);
 
     if (userCheckResult.rows.length === 0) {
       return res.status(404).json({ message: 'Пользователь не найден' });
@@ -535,7 +535,7 @@ app.post('/changepassword', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
     const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2';
-    await client.query(updatePasswordQuery, [hashedPassword, session_user]);
+    await pool.query(updatePasswordQuery, [hashedPassword, session_user]);
       return res.status(200).json({ 
         message: 'Пароль успешно изменен. Вы вышли из всех устройств.',
         logout: true 
@@ -553,7 +553,7 @@ app.get('/user/:id', async (req, res) => {
 
   try {
     const userQuery = 'SELECT id, login, email FROM users WHERE id = $1';
-    const userResult = await client.query(userQuery, [req.params.id]);
+    const userResult = await pool.query(userQuery, [req.params.id]);
 
     if (userResult.rows.length === 0) {
       return res.status(404).json({ message: 'Пользователь не найден' });
