@@ -144,17 +144,6 @@ async function synthesizeText(session_user, text, voice, emotion, speed, format)
   }
 }
 
-const { Client } = pg;
-const client = new Client({
-  user: 'myuser',
-  host: '127.10.11.5',
-  database: 'server',
-  password: 'mypassword',
-  port: 5432,
-});
-
-await client.connect();
-
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
