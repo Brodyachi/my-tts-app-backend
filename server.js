@@ -33,27 +33,26 @@ app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(session({
   store: new (pgSession(session))({
-    conObject: {
-      user: 'myuser',
-      host: '127.10.11.5',
-      database: 'server',
-      password: 'mypassword',
-      port: 5432,
-    }
+    conString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
   }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: {
+  cookie: { 
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    sameSite: 'lax',
+    sameSite: 'lax'
   }
 }));
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], // Добавить все нужные origin
+  origin: [
+    'http://localhost:5173', 
+    'http://127.0.0.1:5173',
+    'https://your-frontend-app.onrender.com'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
