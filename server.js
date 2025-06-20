@@ -53,6 +53,8 @@ app.use(session({
   }
 }));
 
+
+
 const corsOptions = {
   origin: [
     'https://my-tts-app-frontend-vite.onrender.com', 
@@ -62,6 +64,8 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 };
+
+app.set('trust proxy', 1)
 
 app.use(cors(corsOptions));
 
