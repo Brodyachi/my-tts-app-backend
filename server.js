@@ -10,6 +10,9 @@ import DOMPurify from 'dompurify';
 import JSDOM from 'jsdom';
 import hpp from 'hpp';
 
+const __filename1 = fileURLToPath(import.meta.url);
+const __dirname1 = path.dirname(__filename1);
+
 const { Pool } = pg;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -94,8 +97,6 @@ app.use(cors(corsOptions));
 
 app.options('*', cors(corsOptions));
 
-const __filename1 = fileURLToPath(import.meta.url);
-const __dirname1 = path.dirname(__filename1);
 app.use('/public', express.static(path.join(__dirname1, 'public')));
 
 app.use((req, res, next) => {
