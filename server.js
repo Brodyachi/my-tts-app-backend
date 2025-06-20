@@ -53,7 +53,30 @@ app.use(session({
   }
 }));
 
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ 
+      filename: path.join(__dirname, 'logs', 'error.log'), 
+      level: 'error',
+    }),
+    new winston.transports.File({ 
+      filename: path.join(__dirname, 'logs', 'combined.log') 
+    }),
+  ],
+});
 
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.simple(),
+  }));
+}
 
 const corsOptions = {
   origin: [
@@ -111,6 +134,7 @@ cron.schedule('0 0 * * *', async () => {
 const apiToken = process.env.YANDEX_API_KEY;
 const folderToken = process.env.FOLDER_ID;
 
+
 async function synthesizeText(session_user, text, voice, emotion, speed, format) {
   const params = new URLSearchParams();
   params.append('text', text);
@@ -120,6 +144,11 @@ async function synthesizeText(session_user, text, voice, emotion, speed, format)
   params.append('speed', speed);
   params.append('format', format);
 
+  const requestsDir = path.join(__dirname, 'public', 'requests');
+  if (!fs.existsSync(requestsDir)) {
+    fs.mkdirSync(requestsDir, { recursive: true });
+  }
+  
   try {
     const response = await axios({
       method: 'POST',
