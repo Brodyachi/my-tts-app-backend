@@ -47,15 +47,16 @@ app.use(session({
   saveUninitialized: false,
   cookie: { 
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: true,
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    sameSite: 'lax'
+    sameSite: 'none',
+    domain: '.render.com'
   }
 }));
 
 const corsOptions = {
   origin: [
-    'https://my-tts-app-frontend-vite.onrender.com',
+    'https://my-tts-app-frontend-vite.onrender.com', 
     'http://localhost:5173'
   ],
   credentials: true,
