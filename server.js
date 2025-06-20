@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import pgSession from 'connect-pg-simple';
 import cron from 'node-cron';
 import mammoth from 'mammoth';
-import logmod from 'winston';
+import winston from 'winston';
 import * as pdfjsLib from 'pdfjs-dist';
 import DOMPurify from 'dompurify';
 import JSDOM from 'jsdom';
