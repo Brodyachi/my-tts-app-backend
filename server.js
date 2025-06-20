@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import pgSession from 'connect-pg-simple';
 import cron from 'node-cron';
 import mammoth from 'mammoth';
-import logger from 'winston';
+import logmod from 'winston';
 import * as pdfjsLib from 'pdfjs-dist';
 import DOMPurify from 'dompurify';
 import JSDOM from 'jsdom';
@@ -148,7 +148,6 @@ async function synthesizeText(session_user, text, voice, emotion, speed, format)
   if (!fs.existsSync(requestsDir)) {
     fs.mkdirSync(requestsDir, { recursive: true });
   }
-  
   try {
     const response = await axios({
       method: 'POST',
