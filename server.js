@@ -57,7 +57,7 @@ app.use(session({
 
 const corsOptions = {
   origin: [
-    'https://my-tts-app-frontend-vite.onrender.com', 
+    'https://rasa-ttss.onrender.com', 
     'http://localhost:5173'
   ],
   credentials: true,
