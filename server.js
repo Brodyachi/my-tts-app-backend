@@ -4,14 +4,11 @@ import cookieParser from 'cookie-parser';
 import pgSession from 'connect-pg-simple';
 import cron from 'node-cron';
 import mammoth from 'mammoth';
-import winston from 'winston';
+import logger from 'winston';
 import * as pdfjsLib from 'pdfjs-dist';
 import DOMPurify from 'dompurify';
 import JSDOM from 'jsdom';
 import hpp from 'hpp';
-
-const __filename1 = fileURLToPath(import.meta.url);
-const __dirname1 = path.dirname(__filename1);
 
 const { Pool } = pg;
 const pool = new Pool({
@@ -56,30 +53,7 @@ app.use(session({
   }
 }));
 
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
-  transports: [
-    new winston.transports.File({ 
-      filename: path.join(__dirname, 'logs', 'error.log'), 
-      level: 'error',
-    }),
-    new winston.transports.File({ 
-      filename: path.join(__dirname, 'logs', 'combined.log') 
-    }),
-  ],
-});
 
-const logsDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
-}
-
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.simple(),
-  }));
-}
 
 const corsOptions = {
   origin: [
@@ -97,6 +71,8 @@ app.use(cors(corsOptions));
 
 app.options('*', cors(corsOptions));
 
+const __filename1 = fileURLToPath(import.meta.url);
+const __dirname1 = path.dirname(__filename1);
 app.use('/public', express.static(path.join(__dirname1, 'public')));
 
 app.use((req, res, next) => {
@@ -135,7 +111,6 @@ cron.schedule('0 0 * * *', async () => {
 const apiToken = process.env.YANDEX_API_KEY;
 const folderToken = process.env.FOLDER_ID;
 
-
 async function synthesizeText(session_user, text, voice, emotion, speed, format) {
   const params = new URLSearchParams();
   params.append('text', text);
@@ -144,11 +119,10 @@ async function synthesizeText(session_user, text, voice, emotion, speed, format)
   params.append('lang', 'ru-RU');
   params.append('speed', speed);
   params.append('format', format);
-
-  const requestsDir = path.join(__dirname, 'public', 'requests');
-  if (!fs.existsSync(requestsDir)) {
-    fs.mkdirSync(requestsDir, { recursive: true });
-  }
+    const requestsDir = path.join(__dirname, 'public', 'requests');
+    if (!fs.existsSync(requestsDir)) {
+      fs.mkdirSync(requestsDir, { recursive: true });
+    }
   try {
     const response = await axios({
       method: 'POST',
