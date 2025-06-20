@@ -177,6 +177,10 @@ app.get('/', (req, res) => {
   res.send('Hello');
 });
 
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const templateEPath = path.join(__dirname, 'emailTemplate.html');
