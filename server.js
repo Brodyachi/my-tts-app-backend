@@ -67,7 +67,6 @@ const corsOptions = {
 
 app.set('trust proxy', 1)
 
-
 app.use(cors(corsOptions));
 
 app.options('*', cors(corsOptions));
@@ -90,12 +89,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-app.use('/public', express.static(path.join(__dirname1, 'public')));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname1, 'public', 'index.html'));
-});
-
 
 app.use((req, res, next) => {
   if (req.session.user) {
@@ -506,7 +499,7 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
       [session_user, `Файл: ${fileName}`]
     );
     const fileContent = await readFileContent(filePath, fileType);
-    fs.promises.unlink(filePath);
+    fs.unlinkSync(filePath);
     await synthesizeText(session_user, fileContent, voice, emotion, speed, format);
     const userCheckQuery = `
       SELECT audio_pos FROM requests 
