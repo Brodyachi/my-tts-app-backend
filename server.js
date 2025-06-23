@@ -67,11 +67,6 @@ const corsOptions = {
 
 app.set('trust proxy', 1)
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 app.use(cors(corsOptions));
 
@@ -95,6 +90,13 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 
 app.use((req, res, next) => {
   if (req.session.user) {
