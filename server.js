@@ -91,10 +91,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
+app.use('/public', express.static(path.join(__dirname1, 'public')));
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname1, 'public', 'index.html'));
 });
 
 
@@ -507,7 +506,7 @@ app.post('/upload-document', upload.single('document'), async (req, res) => {
       [session_user, `Файл: ${fileName}`]
     );
     const fileContent = await readFileContent(filePath, fileType);
-    fs.unlinkSync(filePath);
+    fs.promises.unlink(filePath);
     await synthesizeText(session_user, fileContent, voice, emotion, speed, format);
     const userCheckQuery = `
       SELECT audio_pos FROM requests 
